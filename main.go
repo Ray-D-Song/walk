@@ -62,9 +62,10 @@ func main() {
 	initStyles()
 
 	m := &model{
-		termWidth:  80,
-		termHeight: 60,
-		positions:  make(map[string]position),
+		termWidth:        80,
+		termHeight:       60,
+		positions:        make(map[string]position),
+		lastDotClickTime: time.Time{}, // 初始化为零值
 	}
 
 	if statusBar, ok := os.LookupEnv("WALK_STATUS_BAR"); ok {
@@ -168,6 +169,8 @@ type model struct {
 	showHelp              bool                // Show help
 	statusBar             *vm.Program         // Status bar program.
 	quitting              bool                // Whether we are quitting the program.
+	lastDotClickTime      time.Time           // 记录上一次敲击"."的时间
+	dotCount              int                 // 记录连续敲击"."的次数
 }
 
 type position struct {
@@ -217,6 +220,45 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.list()
 			m.previewContent = ""
 			return m, nil
+		}
+
+		// 处理连续敲击".."的情况
+		if !fuzzyByDefault && !m.searchMode && msg.Type == tea.KeyRunes && string(msg.Runes) == "." {
+			// 如果已经敲击过一次"."
+			if m.dotCount > 0 && time.Since(m.lastDotClickTime) < 200*time.Millisecond {
+				m.dotCount = 0 // 重置计数器
+				// 双击"..": 导航到上一层目录
+				m.prevName = filepath.Base(m.path)
+				m.path = filepath.Join(m.path, "..")
+				if p, ok := m.positions[m.path]; ok {
+					m.c = p.c
+					m.r = p.r
+					m.offset = p.offset
+				} else {
+					m.findPrevName = true
+				}
+				m.list()
+				return m, nil
+			} else {
+				// 第一次敲击"."
+				m.dotCount++
+				m.lastDotClickTime = time.Now()
+
+				// 设置定时器，如果200ms内没有收到第二次"."，则进入当前目录并退出
+				return m, tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
+					if m.dotCount == 1 { // 仍然是一次点击
+						// 单击".": 进入该目录并退出walk
+						m.quitting = true
+						m.exitCode = 0
+						m.performPendingDeletions()
+						return tea.QuitMsg{}
+					}
+					return nil
+				})
+			}
+		} else {
+			// 键入其他字符，重置"."计数器
+			m.dotCount = 0
 		}
 
 		if fuzzyByDefault {
@@ -272,6 +314,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return m, nil
 			}
+
 			if fi := fileInfo(filePath); fi.IsDir() {
 				// Enter subdirectory.
 				m.path = filePath

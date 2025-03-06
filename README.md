@@ -111,6 +111,8 @@ No additional setup is required.
 | <kbd>d</kbd>, <kbd>delete</kbd>      | Delete file or dir |
 | <kbd>y</kbd>                         | yank current dir   |
 | <kbd>.</kbd>                         | Hide hidden files  |
+| <kbd>.</kbd><kbd>.</kbd> (double click in 200ms)  | navigate to parent directory   |
+| single <kbd>.</kbd> (no second click)      | exit program           |
 
 ## Configuration
 
